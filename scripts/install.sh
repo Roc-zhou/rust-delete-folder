@@ -41,9 +41,40 @@ detect_platform() {
 
 # 获取最新的 release 版本
 get_latest_version() {
-    curl --silent "https://github.com/Roc-zhou/rust-delete-folder/releases/latest" | # 请替换为你的仓库地址
-    grep '"tag_name":' |
-    sed -E 's/.*"([^"]+)".*/\1/'
+    local api_response
+    # 使用 GitHub API 获取最新版本
+    api_response=$(curl --silent --location \
+        --header "Accept: application/vnd.github+json" \
+        --header "X-GitHub-Api-Version: 2022-11-28" \
+        "https://api.github.com/repos/Roc-zhou/rust-delete-folder/releases/latest")
+    
+    # 检查是否获取成功
+    if [ $? -ne 0 ]; then
+        echo "Error: 无法连接到 GitHub API" >&2
+        return 1
+    fi
+    
+    # 检查响应是否包含错误信息
+    if echo "$api_response" | grep -q "API rate limit exceeded"; then
+        echo "Error: GitHub API 速率限制，请稍后再试" >&2
+        return 1
+    fi
+    
+    if echo "$api_response" | grep -q "Not Found"; then
+        echo "Error: 找不到仓库或未发布版本" >&2
+        return 1
+    fi
+    
+    # 提取版本号
+    local version
+    version=$(echo "$api_response" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+    
+    if [ -z "$version" ]; then
+        echo "Error: 无法解析版本号" >&2
+        return 1
+    fi
+    
+    echo "$version"
 }
 
 main() {
@@ -52,12 +83,13 @@ main() {
     echo "检测到平台: ${platform_arch}"
     
     # 获取最新版本
-    local version=$(get_latest_version)
-    if [ -z "$version" ]; then
-        echo "无法获取最新版本"
+    echo "正在获取最新版本信息..."
+    local version
+    if ! version=$(get_latest_version); then
+        echo "错误: 获取版本失败"
         exit 1
     fi
-    echo "最新版本: ${version}"
+    echo "找到最新版本: ${version}"
     
     # 构造下载 URL
     local asset_name="rust-delete-folder-${platform_arch}"
