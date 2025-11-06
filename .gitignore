@@ -1,0 +1,44 @@
+# Rust specific
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# MacOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build and package related
+*.exe
+*.pdb
+*.dll
+*.dylib
+*.so
+*.o
+*.a
+*.lib
+
+# Project specific (customize as needed)
+*.tar.gz
+release/
+dist/
+.env
+.env.local
+.env.*
+
+# Backup files
+*.bak
+*.backup
+*~
