@@ -50,8 +50,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Remove duplicates and sort for deterministic order
-    matches.sort();
+    // Remove duplicates and sort by path depth (deepest first)
+    matches.sort_by_key(|path| {
+        let depth = path.components().count();
+        std::cmp::Reverse(depth) // 深度最深的排在前面
+    });
     matches.dedup();
 
     println!("找到 {} 个匹配的目录:", matches.len());
@@ -78,10 +81,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Perform deletions
     let mut failed = 0usize;
+    let mut succeeded = 0usize;
+    let cwd = std::env::current_dir()?.canonicalize()?;
+
     for p in &matches {
         // Safety: ensure path is inside current working directory
-        let cwd = std::env::current_dir()?.canonicalize()?;
-        let pcanon = p.canonicalize().unwrap_or_else(|_| p.clone());
+        let pcanon = match p.canonicalize() {
+            Ok(path) => path,
+            Err(e) => {
+                // 如果路径已经不存在，可能是因为父目录已被删除，跳过这个错误
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    continue;
+                }
+                eprintln!("无法解析路径 {}: {}", p.display(), e);
+                failed += 1;
+                continue;
+            }
+        };
+
         if !pcanon.starts_with(&cwd) {
             eprintln!("跳过不在当前目录下的路径: {}", p.display());
             failed += 1;
@@ -89,19 +106,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         match fs::remove_dir_all(&p) {
-            Ok(_) => println!("已删除: {}", p.display()),
+            Ok(_) => {
+                println!("已删除: {}", p.display());
+                succeeded += 1;
+            }
             Err(e) => {
+                // 如果目录不存在，可能是因为父目录已被删除，这不算错误
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    continue;
+                }
                 eprintln!("删除失败 {}: {}", p.display(), e);
                 failed += 1;
             }
         }
     }
 
+    // 报告结果
     if failed > 0 {
-        eprintln!("完成，但有 {} 个删除失败。", failed);
+        if succeeded > 0 {
+            println!(
+                "部分完成：成功删除 {} 个目录，{} 个操作失败。",
+                succeeded, failed
+            );
+        } else {
+            println!("操作失败：所有 {} 个删除操作都失败了。", failed);
+        }
         std::process::exit(1);
+    } else if succeeded > 0 {
+        println!("成功完成：删除了 {} 个目录。", succeeded);
+    } else {
+        println!("完成：没有需要删除的目录。");
     }
 
-    println!("执行完毕");
     Ok(())
 }
