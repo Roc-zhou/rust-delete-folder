@@ -1,0 +1,77 @@
+name: Release
+
+permissions:
+  contents: write # 需要这个权限来创建 release 和上传资产
+
+on:
+  push:
+    tags:
+      - "v*" # 在推送 v 开头的 tag 时触发
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # 一个平台失败不影响其他平台
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu    # 修正的 Rust target
+            asset_name: rust-delete-folder-linux-amd64
+          - os: macos-latest
+            target: x86_64-apple-darwin         # 修正的 Rust target
+            asset_name: rust-delete-folder-darwin-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin        # 修正的 Rust target
+            asset_name: rust-delete-folder-darwin-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 完整克隆以便生成更好的 release notes
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: |
+          # 创建发布目录
+          mkdir -p dist
+          
+          # 构建
+          cargo build --release --target ${{ matrix.target }}
+          
+          # 打包
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../dist/${{ matrix.asset_name }}.tar.gz rust-delete-folder
+          cd ../../..
+          
+          # 生成 sha256 校验和
+          cd dist
+          sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+          cat ${{ matrix.asset_name }}.tar.gz.sha256
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/${{ matrix.asset_name }}.tar.gz
+            dist/${{ matrix.asset_name }}.tar.gz.sha256
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true # 如果文件不存在则失败
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
